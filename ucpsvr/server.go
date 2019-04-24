@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/bryan-t/golang-ucp-sim/common"
+	"github.com/bryan-t/golang-ucp-sim/ucp"
+	"github.com/bryan-t/golang-ucp-sim/ucpmock"
 	"log"
 	"net"
 )
@@ -15,7 +17,7 @@ type UcpServer struct {
 }
 
 // ETX is the terminator for UCP packets
-const ETX = 2
+const ETX = 3
 
 // NewUcpServer creates a new instance of UcpServer
 func NewUcpServer() *UcpServer {
@@ -65,6 +67,20 @@ func handleIncoming(conn net.Conn) {
 			conn.Close()
 			return
 		}
-		log.Println("Got data: ", data)
+
+		pdu, err := ucp.NewPDU(data)
+		log.Println("Got PDU: ", pdu)
+		if err != nil {
+			log.Println("Encountered error ", err.Error())
+			conn.Close()
+			return
+		}
+
+		res, err := ucpmock.ProcessIncoming(pdu)
+		if res == nil {
+			continue
+		}
+		resBytes := res.Bytes()
+		conn.Write(resBytes)
 	}
 }
