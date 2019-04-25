@@ -2,11 +2,14 @@ package ucp
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/go-gsm/charset"
 	"log"
 	"strconv"
 	"strings"
+	"unicode/utf16"
 )
 
 // Ucp Operations
@@ -69,6 +72,74 @@ func NewPDU(raw []byte) (*PDU, error) {
 	pdu.Data = strings.Split(string(raw[15:len(raw)-4]), "/")
 	pdu.Checksum = string(raw[len(raw)-3 : len(raw)-1])
 	return pdu, nil
+}
+
+// GetMessage returns the message when the operation is SubmitShortMessageOp
+func (pdu *PDU) GetMessage() (string, error) {
+	if pdu.Operation != SubmitShortMessageOp {
+		return "", errors.New("Operation is not submit short message")
+	}
+	const (
+		AMsg = "3"
+		TD   = "4"
+	)
+	var msg string
+
+	if pdu.Data[18] == AMsg {
+		return decodeIRA([]byte(pdu.Data[20])), nil
+	}
+	if pdu.Data[18] == TD {
+		decoded, err := hex.DecodeString(string(pdu.Data[20]))
+		if err != nil {
+			log.Println(err)
+		}
+		utf16, err := DecodeUcs2(decoded)
+		if err != nil {
+			log.Println(err)
+		}
+		msg = utf16
+	}
+
+	return msg, nil
+}
+
+// GetSender returns the sender of the message
+func (pdu *PDU) GetSender() (string, error) {
+	if pdu.Operation != SubmitShortMessageOp {
+		return "", errors.New("Operation is not submit short message")
+	}
+	decoded, err := hex.DecodeString(pdu.Data[1])
+	if err != nil {
+		return "", err
+	}
+	unpacked := charset.Unpack7Bit(decoded[1:])
+	sender, err := charset.Decode7Bit(unpacked)
+	if err != nil {
+		return "", err
+	}
+	return sender, nil
+}
+
+// GetRecipient returns the recipient of message
+func (pdu *PDU) GetRecipient() (string, error) {
+	if pdu.Operation != SubmitShortMessageOp {
+		return "", errors.New("Operation is not submit short message")
+	}
+	return pdu.Data[0], nil
+}
+
+// DecodeUcs2 decodes the given UCS2 (UTF-16) octet data into a UTF-8 encoded string.
+func DecodeUcs2(octets []byte) (str string, err error) {
+	if len(octets)%2 != 0 {
+		err = errors.New("DecodeUcs2: Uneven number of octets")
+		return
+	}
+	buf := make([]uint16, 0, len(octets)/2)
+	for i := 0; i < len(octets); i += 2 {
+		buf = append(buf, uint16(octets[i])<<8|uint16(octets[i+1]))
+	}
+	runes := utf16.Decode(buf)
+	return string(runes), nil
 }
 
 // Bytes returns the serialized PDU
