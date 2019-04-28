@@ -2,7 +2,10 @@ package ucpmock
 
 import (
 	"github.com/bryan-t/golang-ucp-sim/ucp"
+	"github.com/bryan-t/golang-ucp-sim/util"
 	"log"
+	"math/rand"
+	"time"
 )
 
 // ProcessIncoming is mock handling of incoming pdu requests
@@ -53,11 +56,17 @@ func ProcessSubmitShortMessageOp(req *ucp.PDU) (*ucp.PDU, error) {
 	sender, _ := req.GetSender()
 	recipient, _ := req.GetRecipient()
 	log.Printf("Received a message '%s' from sender '%s' to recipient '%s' \n", msg, sender, recipient)
-	res := new(ucp.PDU)
-	res.TransRefNum = req.TransRefNum
-	res.Type = ucp.ResultType
-	res.Operation = req.Operation
-	res.Data = append(res.Data, "A")
-	res.Data = append(res.Data, "")
+	res := ucp.NewSubmitSMResponse(req, true, "")
+
+	config := util.GetConfig()
+	diff := config.SubmitSMResponseTimeHigh - config.SubmitSMResponseTimeLow
+	sleep := config.SubmitSMResponseTimeLow
+	if diff != 0 {
+		sleep = rand.Int()%diff + config.SubmitSMResponseTimeLow
+	}
+	if sleep > 0 {
+		time.Sleep(time.Duration(sleep) * time.Millisecond)
+	}
+	util.LogSuccess()
 	return res, nil
 }

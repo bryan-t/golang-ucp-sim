@@ -6,6 +6,7 @@ import (
 	"github.com/bryan-t/golang-ucp-sim/common"
 	"github.com/bryan-t/golang-ucp-sim/ucp"
 	"github.com/bryan-t/golang-ucp-sim/ucpmock"
+	"github.com/bryan-t/golang-ucp-sim/util"
 	"log"
 	"net"
 )
@@ -60,7 +61,10 @@ func (server *UcpServer) Stop() {
 
 func handleIncoming(conn net.Conn) {
 	reader := bufio.NewReader(conn)
+	channel := make(chan *ucp.PDU, util.MaxWindowSize)
+	go processIncomingViaChannel(conn, channel)
 	for {
+
 		data, err := reader.ReadSlice(ETX)
 		if err != nil {
 			log.Println("Encountered error ", err.Error())
@@ -75,8 +79,46 @@ func handleIncoming(conn net.Conn) {
 			conn.Close()
 			return
 		}
+		config := util.GetConfig()
+		max := config.SubmitSMWindowMax
+		if max > util.MaxWindowSize {
+			max = util.MaxWindowSize
+		}
 
-		res, err := ucpmock.ProcessIncoming(pdu)
+		if pdu.Operation != ucp.SubmitShortMessageOp {
+			processIncoming(conn, pdu)
+			continue
+		}
+
+		if len(channel) >= max {
+			log.Println("Max window reached")
+			util.LogFail()
+			res := ucp.NewSubmitSMResponse(pdu, true, "MAX WINDOW")
+			resBytes := res.Bytes()
+			conn.Write(resBytes)
+			continue
+		}
+		channel <- pdu
+	}
+}
+
+func processIncoming(conn net.Conn, pdu *ucp.PDU) {
+	res, _ := ucpmock.ProcessIncoming(pdu)
+	if res == nil {
+		return
+	}
+	resBytes := res.Bytes()
+	conn.Write(resBytes)
+}
+
+func processIncomingViaChannel(conn net.Conn, c chan *ucp.PDU) {
+	for {
+		pdu, ok := <-c
+		if !ok {
+			break
+		}
+		log.Println("Got a new request from channel")
+		res, _ := ucpmock.ProcessIncoming(pdu)
 		if res == nil {
 			continue
 		}

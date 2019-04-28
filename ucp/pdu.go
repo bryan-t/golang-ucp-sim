@@ -194,3 +194,18 @@ func checkSum(b []byte) []byte {
 	log.Println("chkSum: ", chkSum)
 	return []byte(chkSum)
 }
+
+// NewSubmitSMResponse creates a new response PDU for submit SM
+func NewSubmitSMResponse(req *PDU, success bool, err string) *PDU {
+	res := new(PDU)
+	res.TransRefNum = req.TransRefNum
+	res.Type = ResultType
+	res.Operation = req.Operation
+	if success {
+		res.Data = append(res.Data, "A")
+	} else {
+		res.Data = append(res.Data, "N")
+	}
+	res.Data = append(res.Data, err)
+	return res
+}
