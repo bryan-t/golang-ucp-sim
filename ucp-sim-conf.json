@@ -1,0 +1,7 @@
+{
+	"SubmitSMResponseTimeLow": 0,
+	"SubmitSMResponseTimeHigh": 0,
+	"SubmitSMWindowMax": 100,
+	"APIPort": 8090,
+	"UcpPort": 8080
+}

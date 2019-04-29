@@ -2,6 +2,7 @@ package httpsvr
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/bryan-t/golang-ucp-sim/util"
 	"github.com/gorilla/mux"
 	"log"
@@ -9,7 +10,7 @@ import (
 )
 
 // Start starts the http server which serves as the UI
-func Start() {
+func Start(port int) {
 	log.Println("Starting http server...")
 	router := mux.NewRouter()
 	router.HandleFunc("/", serveHome)
@@ -17,7 +18,7 @@ func Start() {
 	router.HandleFunc("/api/successTPS", successTPS)
 
 	server := &http.Server{
-		Addr:    ":8090",
+		Addr:    fmt.Sprintf(":%d", port),
 		Handler: router,
 	}
 
