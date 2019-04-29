@@ -15,3 +15,8 @@ Only supports the following operations:
 2. go run github.com/bryan-t/golang-ucp-sim
 
 Note: implemented using Go Modules.
+
+# HTTP Api
+Currently only supports TPS measurements
+* http://localhost:8090/api/successTPS
+* http://localhost:8090/api/failTPS
