@@ -40,3 +40,14 @@ func (slice *ConnSlice) GetConns() []net.Conn {
 	slice.mutex.Unlock()
 	return conns
 }
+
+// GetConn returns the connection at the specified index. If the index exceeds the size, returns the first one
+func (slice *ConnSlice) GetConn(i int) (net.Conn, int) {
+	slice.mutex.Lock()
+	defer slice.mutex.Unlock()
+
+	if i >= len(slice.conns) {
+		return slice.conns[0], 0
+	}
+	return slice.conns[i], i
+}
