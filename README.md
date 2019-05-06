@@ -17,6 +17,29 @@ Only supports the following operations:
 Note: implemented using Go Modules.
 
 # HTTP Api
-Currently only supports TPS measurements
+
+## Deliver Short Message
+* http://localhost:8090/api/messages/deliverBulk
+
+```
+{
+   "Requests":[  
+      {  
+         "AccessCode":"acode",  
+         "Recipient":"recipient1",  
+         "Message":"message1"  
+      },  
+      {  
+         "AccessCode":"acode",  
+         "Recipient":"recipient2",  
+         "Message":"message2"  
+      }  
+   ]
+}
+```
+
+## TPS
+
+* http://localhost:8090/api/incomingTPS
 * http://localhost:8090/api/successTPS
 * http://localhost:8090/api/failTPS
