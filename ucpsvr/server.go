@@ -173,4 +173,5 @@ func (server *UcpServer) processDeliverReq(req *models.DeliverSMReq, conn *net.C
 		(*conn).Close()
 		server.deliverChan <- req
 	}
+	util.LogIncomingTPS()
 }

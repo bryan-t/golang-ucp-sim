@@ -8,6 +8,16 @@ import (
 var successTPS *ratecounter.RateCounter
 var failTPS *ratecounter.RateCounter
 
+var incomingTPS *ratecounter.RateCounter
+
+// LogIncomingTPS increments incoming TPS
+func LogIncomingTPS() {
+	if incomingTPS == nil {
+		incomingTPS = ratecounter.NewRateCounter(1 * time.Second)
+	}
+	incomingTPS.Incr(1)
+}
+
 // LogSuccess increments success count
 func LogSuccess() {
 	if successTPS == nil {
@@ -38,4 +48,12 @@ func GetFailTPS() int64 {
 		return 0
 	}
 	return failTPS.Rate()
+}
+
+// GetIncomingTPS returns the incoming tps
+func GetIncomingTPS() int64 {
+	if incomingTPS == nil {
+		return 0
+	}
+	return incomingTPS.Rate()
 }

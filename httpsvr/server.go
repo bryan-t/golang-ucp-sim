@@ -23,6 +23,7 @@ func Start(port int, fn deliverFn) {
 	router.HandleFunc("/", serveHome)
 	router.HandleFunc("/api/failTPS", failTPS)
 	router.HandleFunc("/api/successTPS", successTPS)
+	router.HandleFunc("/api/incomingTPS", incomingTPS)
 	router.HandleFunc("/api/messages/deliverBulk", deliverBulk)
 
 	server := &http.Server{
@@ -42,6 +43,11 @@ type tps struct {
 	TPS int64
 }
 
+func incomingTPS(w http.ResponseWriter, r *http.Request) {
+	resp := tps{util.GetIncomingTPS()}
+	jsonResp, _ := json.Marshal(resp)
+	w.Write([]byte(jsonResp))
+}
 func successTPS(w http.ResponseWriter, r *http.Request) {
 	resp := tps{util.GetSuccessTPS()}
 	jsonResp, _ := json.Marshal(resp)
