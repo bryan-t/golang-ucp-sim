@@ -52,7 +52,7 @@ func (server *UcpServer) Start(port int) error {
 		}
 
 		log.Println("Got a new connection.")
-		go server.handleIncoming(conn)
+		go server.handleIncoming(&conn)
 	}
 
 }
@@ -61,12 +61,12 @@ func (server *UcpServer) Start(port int) error {
 func (server *UcpServer) Stop() {
 	server.listener.Close()
 	for _, conn := range server.conns.GetConns() {
-		conn.Close()
+		(*conn).Close()
 	}
 }
 
-func (server *UcpServer) handleIncoming(conn net.Conn) {
-	reader := bufio.NewReader(conn)
+func (server *UcpServer) handleIncoming(conn *net.Conn) {
+	reader := bufio.NewReader(*conn)
 	server.conns.Append(conn)
 	defer server.conns.Remove(conn)
 	channel := make(chan *ucp.PDU, util.MaxWindowSize)
@@ -76,7 +76,7 @@ func (server *UcpServer) handleIncoming(conn net.Conn) {
 		data, err := reader.ReadSlice(ETX)
 		if err != nil {
 			log.Println("Encountered error ", err.Error())
-			conn.Close()
+			(*conn).Close()
 			return
 		}
 
@@ -84,7 +84,7 @@ func (server *UcpServer) handleIncoming(conn net.Conn) {
 		log.Println("Got PDU: ", pdu)
 		if err != nil {
 			log.Println("Encountered error ", err.Error())
-			conn.Close()
+			(*conn).Close()
 			return
 		}
 		config := util.GetConfig()
@@ -103,9 +103,9 @@ func (server *UcpServer) handleIncoming(conn net.Conn) {
 			util.LogFail()
 			res := ucp.NewSubmitSMResponse(pdu, true, "MAX WINDOW")
 			resBytes := res.Bytes()
-			_, err = conn.Write(resBytes)
+			_, err = (*conn).Write(resBytes)
 			if err != nil {
-				conn.Close()
+				(*conn).Close()
 				return
 			}
 			continue
@@ -114,20 +114,20 @@ func (server *UcpServer) handleIncoming(conn net.Conn) {
 	}
 }
 
-func (server *UcpServer) processIncoming(conn net.Conn, pdu *ucp.PDU) {
+func (server *UcpServer) processIncoming(conn *net.Conn, pdu *ucp.PDU) {
 	res, _ := ucpmock.ProcessIncoming(pdu)
 	if res == nil {
 		return
 	}
 	resBytes := res.Bytes()
-	_, err := conn.Write(resBytes)
+	_, err := (*conn).Write(resBytes)
 	if err != nil {
-		conn.Close()
+		(*conn).Close()
 		return
 	}
 }
 
-func (server *UcpServer) processIncomingViaChannel(conn net.Conn, c chan *ucp.PDU) {
+func (server *UcpServer) processIncomingViaChannel(conn *net.Conn, c chan *ucp.PDU) {
 	for {
 		pdu, ok := <-c
 		if !ok {
@@ -139,22 +139,38 @@ func (server *UcpServer) processIncomingViaChannel(conn net.Conn, c chan *ucp.PD
 			continue
 		}
 		resBytes := res.Bytes()
-		_, err := conn.Write(resBytes)
+		_, err := (*conn).Write(resBytes)
 		if err != nil {
-			conn.Close()
+			(*conn).Close()
 			return
 		}
 	}
 }
 
 func (server *UcpServer) processDeliver() {
+	i := 0
 	for {
 		req, _ := <-server.deliverChan
 		log.Println("Got a new deliver request. Spawning a routine")
-		go server.processDeliverReq(req)
+		var conn *net.Conn
+		conn, i = server.conns.GetConn(i)
+		if conn == nil {
+			log.Println("Got no connection. Discarding Deliver SM")
+			continue
+		}
+		i++
+		go server.processDeliverReq(req, conn)
 	}
 }
 
-func (server *UcpServer) processDeliverReq(req *models.DeliverSMReq) {
+func (server *UcpServer) processDeliverReq(req *models.DeliverSMReq, conn *net.Conn) {
 	log.Printf("Processing: %+v\n", req)
+	pdu := ucp.NewDeliverSMPDU(req.Recipient, req.AccessCode, req.Message)
+	log.Printf("Sending: %+v\n", pdu)
+	_, err := (*conn).Write(pdu.Bytes())
+	if err != nil {
+		log.Println("Failed to send Deliver SM: ", err)
+		(*conn).Close()
+		server.deliverChan <- req
+	}
 }
