@@ -9,6 +9,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf16"
 )
 
@@ -142,6 +143,16 @@ func DecodeUcs2(octets []byte) (str string, err error) {
 	return string(runes), nil
 }
 
+// EncodeUcs2 encodes the given UTF-8 text into UCS2 (UTF-16) encoding and returns the produced octets.
+func EncodeUcs2(str string) []byte {
+	buf := utf16.Encode([]rune(str))
+	octets := make([]byte, 0, len(buf)*2)
+	for _, n := range buf {
+		octets = append(octets, byte(n&0xFF00>>8), byte(n&0x00FF))
+	}
+	return octets
+}
+
 // Bytes returns the serialized PDU
 func (pdu *PDU) Bytes() []byte {
 	// compute len
@@ -207,5 +218,52 @@ func NewSubmitSMResponse(req *PDU, success bool, err string) *PDU {
 		res.Data = append(res.Data, "N")
 	}
 	res.Data = append(res.Data, err)
+	return res
+}
+
+// NewDeliverSMPDU creates a new deliver sm PDU
+func NewDeliverSMPDU(recipient string, sender string, message string) *PDU {
+	res := new(PDU)
+	res.TransRefNum = "01"
+	res.Type = OperationType
+	res.Operation = DeliverShortMessageOp
+	msgUcs := EncodeUcs2(message)
+	msgIra := make([]byte, hex.EncodedLen(len(msgUcs)))
+	hex.Encode(msgIra, []byte(msgUcs))
+	res.Data = []string{
+		recipient,
+		sender,
+		"", // AC
+		"", // NRq
+		"", // NAdC
+		"", // NT
+		"", // NPID
+		"", // LRq
+		"", // LRAd
+		"", // LPID
+		"", // DD
+		"", // DDT
+		"", // VP
+		"", // RPID
+		time.Now().Format("020106150405"),
+		"", // Dst
+		"", // Rsn
+		"", // DSCTS
+		"", // MT
+		"", // NB
+		string(msgIra),
+		"",       // MMS
+		"",       // PR
+		"",       // DCs
+		"",       // MCLs
+		"",       // RPI
+		"",       // CPg
+		"",       // RPLy
+		"",       // OTOA
+		"",       // HPLMN
+		"020108", // xser
+		"",       // RES4
+		"",       // RES5
+	}
 	return res
 }

@@ -68,8 +68,9 @@ func main() {
 		return
 	}
 	log.Printf("Using config: \n%+v\n", config)
-	go httpsvr.Start(config.APIPort)
+
 	var server = ucpsvr.NewUcpServer()
+	go httpsvr.Start(config.APIPort, server.Deliver)
 	server.Start(config.UcpPort)
 
 }
