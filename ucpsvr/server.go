@@ -2,8 +2,8 @@ package ucpsvr
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
-	"github.com/bryan-t/golang-ucp-sim/common"
 	"github.com/bryan-t/golang-ucp-sim/models"
 	"github.com/bryan-t/golang-ucp-sim/ucp"
 	"github.com/bryan-t/golang-ucp-sim/ucpmock"
@@ -15,7 +15,7 @@ import (
 // UcpServer a server which processes incoming UCP requests
 type UcpServer struct {
 	listener    net.Listener
-	conns       *common.ConnSlice
+	clients     *ClientSlice
 	deliverChan chan *models.DeliverSMReq
 }
 
@@ -24,7 +24,7 @@ const ETX = 3
 
 func NewUcpServer() *UcpServer {
 	server := new(UcpServer)
-	server.conns = common.NewConnSlice()
+	server.clients = NewClientSlice()
 	server.listener = nil
 	server.deliverChan = make(chan *models.DeliverSMReq, 100)
 	return server
@@ -44,15 +44,18 @@ func (server *UcpServer) Start(port int) error {
 	if err != nil {
 		return err
 	}
-	go server.processDeliver()
 	for {
 		conn, listenErr := server.listener.Accept()
 		if err != nil {
 			log.Println(listenErr)
 		}
-
+		client := new(client)
+		client.conn = &conn
+		client.currentDeliverTransRef = 0
+		client.deliverWindow = make(map[int]*ucp.PDU)
 		log.Println("Got a new connection.")
-		go server.handleIncoming(&conn)
+		go server.handleIncoming(client)
+		go server.processDeliver(&conn)
 	}
 
 }
@@ -60,23 +63,23 @@ func (server *UcpServer) Start(port int) error {
 // Stop stops the UcpServer
 func (server *UcpServer) Stop() {
 	server.listener.Close()
-	for _, conn := range server.conns.GetConns() {
-		(*conn).Close()
+	for _, client := range server.clients.GetClients() {
+		(*(*client).conn).Close()
 	}
 }
 
-func (server *UcpServer) handleIncoming(conn *net.Conn) {
-	reader := bufio.NewReader(*conn)
-	server.conns.Append(conn)
-	defer server.conns.Remove(conn)
+func (server *UcpServer) handleIncoming(client *client) {
+	reader := bufio.NewReader(*client.conn)
+	server.clients.Append(client)
+	defer server.clients.Remove(client)
 	channel := make(chan *ucp.PDU, util.MaxWindowSize)
-	go server.processIncomingViaChannel(conn, channel)
+	go server.processIncomingViaChannel(client.conn, channel)
 	for {
 
 		data, err := reader.ReadSlice(ETX)
 		if err != nil {
 			log.Println("Encountered error ", err.Error())
-			(*conn).Close()
+			(*client.conn).Close()
 			return
 		}
 
@@ -84,7 +87,7 @@ func (server *UcpServer) handleIncoming(conn *net.Conn) {
 		log.Println("Got PDU: ", pdu)
 		if err != nil {
 			log.Println("Encountered error ", err.Error())
-			(*conn).Close()
+			(*client.conn).Close()
 			return
 		}
 		config := util.GetConfig()
@@ -94,7 +97,7 @@ func (server *UcpServer) handleIncoming(conn *net.Conn) {
 		}
 
 		if pdu.Operation != ucp.SubmitShortMessageOp {
-			server.processIncoming(conn, pdu)
+			server.processIncoming(client.conn, pdu)
 			continue
 		}
 
@@ -103,9 +106,9 @@ func (server *UcpServer) handleIncoming(conn *net.Conn) {
 			util.LogFail()
 			res := ucp.NewSubmitSMResponse(pdu, true, "MAX WINDOW")
 			resBytes := res.Bytes()
-			_, err = (*conn).Write(resBytes)
+			_, err = (*client.conn).Write(resBytes)
 			if err != nil {
-				(*conn).Close()
+				(*client.conn).Close()
 				return
 			}
 			continue
@@ -147,23 +150,18 @@ func (server *UcpServer) processIncomingViaChannel(conn *net.Conn, c chan *ucp.P
 	}
 }
 
-func (server *UcpServer) processDeliver() {
-	i := 0
+func (server *UcpServer) processDeliver(conn *net.Conn) {
 	for {
 		req, _ := <-server.deliverChan
-		log.Println("Got a new deliver request. Spawning a routine")
-		var conn *net.Conn
-		conn, i = server.conns.GetConn(i)
-		if conn == nil {
-			log.Println("Got no connection. Discarding Deliver SM")
-			continue
+		log.Println("Got a new deliver request.")
+		err := server.processDeliverReq(req, conn)
+		if err != nil {
+			return
 		}
-		i++
-		go server.processDeliverReq(req, conn)
 	}
 }
 
-func (server *UcpServer) processDeliverReq(req *models.DeliverSMReq, conn *net.Conn) {
+func (server *UcpServer) processDeliverReq(req *models.DeliverSMReq, conn *net.Conn) error {
 	log.Printf("Processing: %+v\n", req)
 	pdu := ucp.NewDeliverSMPDU(req.Recipient, req.AccessCode, req.Message)
 	log.Printf("Sending: %+v\n", pdu)
@@ -172,6 +170,8 @@ func (server *UcpServer) processDeliverReq(req *models.DeliverSMReq, conn *net.C
 		log.Println("Failed to send Deliver SM: ", err)
 		(*conn).Close()
 		server.deliverChan <- req
+		return errors.New("Failed to deliver SM")
 	}
 	util.LogIncomingTPS()
+	return nil
 }

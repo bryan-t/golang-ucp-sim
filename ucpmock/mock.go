@@ -16,6 +16,15 @@ func ProcessIncoming(req *ucp.PDU) (*ucp.PDU, error) {
 	case ucp.SubmitShortMessageOp:
 		return ProcessSubmitShortMessageOp(req)
 	case ucp.DeliverShortMessageOp:
+		if req.Type != ucp.ResultType {
+			break
+		}
+		log.Println("Got Deliver SM Result")
+		if ProcessDeliverSMResult == nil {
+			break
+		}
+
+		ProcessDeliverSMResult(req)
 	case ucp.DeliverNotificationOp:
 	case ucp.SessionManagementOp:
 		return ProcessSessionManagementOp(req)
@@ -25,6 +34,9 @@ func ProcessIncoming(req *ucp.PDU) (*ucp.PDU, error) {
 	}
 	return nil, nil
 }
+
+// ProcessDeliverSMResult set this for custom processing of deliver sm result
+var ProcessDeliverSMResult func(*ucp.PDU)
 
 // ProcessSessionManagementOp accepts all incoming auth request
 func ProcessSessionManagementOp(req *ucp.PDU) (*ucp.PDU, error) {
