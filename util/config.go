@@ -4,6 +4,7 @@ type config struct {
 	SubmitSMResponseTimeLow  int
 	SubmitSMResponseTimeHigh int
 	SubmitSMWindowMax        int
+	DeliverSMWindowMax       int
 	APIPort                  int
 	UcpPort                  int
 }
@@ -17,6 +18,7 @@ func GetConfig() *config {
 		instance.SubmitSMResponseTimeLow = 0
 		instance.SubmitSMResponseTimeHigh = 0
 		instance.SubmitSMWindowMax = 100
+		instance.DeliverSMWindowMax = 100
 		instance.APIPort = 8090
 		instance.UcpPort = 8080
 

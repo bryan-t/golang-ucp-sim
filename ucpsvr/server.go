@@ -10,6 +10,7 @@ import (
 	"github.com/bryan-t/golang-ucp-sim/util"
 	"log"
 	"net"
+	"time"
 )
 
 // UcpServer a server which processes incoming UCP requests
@@ -52,10 +53,11 @@ func (server *UcpServer) Start(port int) error {
 		client := new(client)
 		client.conn = &conn
 		client.currentDeliverTransRef = 0
-		client.deliverWindow = make(map[int]*ucp.PDU)
+		client.deliverWindow = make(map[string]*ucp.PDU)
 		log.Println("Got a new connection.")
+		// NOTE: need to transfer functions from server to client
 		go server.handleIncoming(client)
-		go server.processDeliver(&conn)
+		go server.processDeliver(client)
 	}
 
 }
@@ -73,7 +75,7 @@ func (server *UcpServer) handleIncoming(client *client) {
 	server.clients.Append(client)
 	defer server.clients.Remove(client)
 	channel := make(chan *ucp.PDU, util.MaxWindowSize)
-	go server.processIncomingViaChannel(client.conn, channel)
+	go server.processIncomingViaChannel(client, channel)
 	for {
 
 		data, err := reader.ReadSlice(ETX)
@@ -97,7 +99,7 @@ func (server *UcpServer) handleIncoming(client *client) {
 		}
 
 		if pdu.Operation != ucp.SubmitShortMessageOp {
-			server.processIncoming(client.conn, pdu)
+			server.processIncoming(client, pdu)
 			continue
 		}
 
@@ -117,58 +119,62 @@ func (server *UcpServer) handleIncoming(client *client) {
 	}
 }
 
-func (server *UcpServer) processIncoming(conn *net.Conn, pdu *ucp.PDU) {
+func (server *UcpServer) processIncoming(client *client, pdu *ucp.PDU) {
 	res, _ := ucpmock.ProcessIncoming(pdu)
+	if pdu != nil && pdu.Type == ucp.ResultType && pdu.Operation == ucp.DeliverShortMessageOp {
+		processDeliverSMResult(client, pdu)
+		return
+	}
 	if res == nil {
 		return
 	}
 	resBytes := res.Bytes()
-	_, err := (*conn).Write(resBytes)
+	_, err := (*client.conn).Write(resBytes)
 	if err != nil {
-		(*conn).Close()
+		(*client.conn).Close()
 		return
 	}
 }
 
-func (server *UcpServer) processIncomingViaChannel(conn *net.Conn, c chan *ucp.PDU) {
+func processDeliverSMResult(client *client, pdu *ucp.PDU) {
+	client.removeFromWindow(pdu.TransRefNum)
+}
+
+func (server *UcpServer) processIncomingViaChannel(client *client, c chan *ucp.PDU) {
 	for {
 		pdu, ok := <-c
 		if !ok {
 			break
 		}
 		log.Println("Got a new request from channel")
-		res, _ := ucpmock.ProcessIncoming(pdu)
-		if res == nil {
+		server.processIncoming(client, pdu)
+	}
+}
+
+func (server *UcpServer) processDeliver(client *client) {
+	for {
+		if !client.windowHasVacantSlot() {
+			time.Sleep(500 * time.Millisecond)
 			continue
 		}
-		resBytes := res.Bytes()
-		_, err := (*conn).Write(resBytes)
-		if err != nil {
-			(*conn).Close()
-			return
-		}
-	}
-}
-
-func (server *UcpServer) processDeliver(conn *net.Conn) {
-	for {
 		req, _ := <-server.deliverChan
 		log.Println("Got a new deliver request.")
-		err := server.processDeliverReq(req, conn)
+		err := server.processDeliverReq(req, client)
 		if err != nil {
 			return
 		}
 	}
 }
 
-func (server *UcpServer) processDeliverReq(req *models.DeliverSMReq, conn *net.Conn) error {
+func (server *UcpServer) processDeliverReq(req *models.DeliverSMReq, client *client) error {
 	log.Printf("Processing: %+v\n", req)
 	pdu := ucp.NewDeliverSMPDU(req.Recipient, req.AccessCode, req.Message)
+	client.putToWindow(pdu)
 	log.Printf("Sending: %+v\n", pdu)
-	_, err := (*conn).Write(pdu.Bytes())
+	_, err := (*client.conn).Write(pdu.Bytes())
 	if err != nil {
 		log.Println("Failed to send Deliver SM: ", err)
-		(*conn).Close()
+		(*client.conn).Close()
 		server.deliverChan <- req
 		return errors.New("Failed to deliver SM")
 	}
