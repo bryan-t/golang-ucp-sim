@@ -26,6 +26,24 @@ func (c *client) windowHasVacantSlot() bool {
 	return len(c.deliverWindow) < util.GetConfig().DeliverSMWindowMax
 }
 
+/*
+func (c *client) reserveWindowSlot() string {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	if len(c.deliverWindow) > util.GetConfig().DeliverSMWindowMax {
+		return 0
+	}
+
+	for {
+		c.currentDeliverTransRef = (c.currentDeliverTransRef)%transRefMax + 1
+		idx = fmt.Sprintf("%02d", c.currentDeliverTransRef)
+		if _, ok := c.deliverWindow[idx]; ok {
+			continue
+		}
+		break
+	}
+}
+*/
 func (c *client) putToWindow(pdu *ucp.PDU) string {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -36,6 +54,7 @@ func (c *client) putToWindow(pdu *ucp.PDU) string {
 	for {
 		c.currentDeliverTransRef = (c.currentDeliverTransRef)%transRefMax + 1
 		idx = fmt.Sprintf("%02d", c.currentDeliverTransRef)
+		log.Println("Trying index: ", idx)
 		if _, ok := c.deliverWindow[idx]; ok {
 			continue
 		}

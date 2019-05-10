@@ -110,6 +110,7 @@ func (server *UcpServer) handleIncoming(client *client) {
 			resBytes := res.Bytes()
 			_, err = (*client.conn).Write(resBytes)
 			if err != nil {
+				log.Println("Encountered error ", err.Error())
 				(*client.conn).Close()
 				return
 			}
@@ -131,6 +132,7 @@ func (server *UcpServer) processIncoming(client *client, pdu *ucp.PDU) {
 	resBytes := res.Bytes()
 	_, err := (*client.conn).Write(resBytes)
 	if err != nil {
+		log.Println("Encountered error ", err.Error())
 		(*client.conn).Close()
 		return
 	}
@@ -157,6 +159,7 @@ func (server *UcpServer) processDeliver(client *client) {
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
+		log.Println("Client: Waiting for request.")
 		req, _ := <-server.deliverChan
 		log.Println("Got a new deliver request.")
 		err := server.processDeliverReq(req, client)

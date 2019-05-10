@@ -60,14 +60,14 @@ func failTPS(w http.ResponseWriter, r *http.Request) {
 }
 
 func deliverBulk(w http.ResponseWriter, r *http.Request) {
-	log.Println("Got deliver bulk request")
+	//log.Println("Got deliver bulk request")
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		w.Write([]byte("Encountered error on reading"))
 		w.WriteHeader(500)
 		return
 	}
-	log.Println("Got body: ", string(body))
+	//log.Println("Got body: ", string(body))
 	var bulkDeliverReq models.DeliverSMReqBulk
 	err = json.Unmarshal(body, &bulkDeliverReq)
 	if err != nil {
