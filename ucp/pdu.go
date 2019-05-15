@@ -224,7 +224,6 @@ func NewSubmitSMResponse(req *PDU, success bool, err string) *PDU {
 // NewDeliverSMPDU creates a new deliver sm PDU
 func NewDeliverSMPDU(recipient string, sender string, message string) *PDU {
 	res := new(PDU)
-	res.TransRefNum = "01"
 	res.Type = OperationType
 	res.Operation = DeliverShortMessageOp
 	msgUcs := EncodeUcs2(message)
