@@ -22,6 +22,7 @@ type client struct {
 	currentDeliverTransRef int
 	deliverWindow          map[string]*ucp.PDU
 	deliverChan            chan *models.DeliverSMReq
+	stop                   *bool
 }
 
 func (c *client) windowHasVacantSlot() bool {
@@ -51,9 +52,14 @@ func (c *client) reserveWindowSlot() string {
 }
 */
 
-func (c *client) start() {
-	go c.handleIncoming()
-	go c.processDeliver()
+func (c *client) start(wg *sync.WaitGroup) {
+	var cWG sync.WaitGroup
+	wg.Add(1)
+	go c.handleIncoming(&cWG)
+	go c.processDeliver(&cWG)
+	cWG.Wait()
+	wg.Done()
+	log.Println("Closing client..")
 }
 
 func (c *client) putToWindow(pdu *ucp.PDU) string {
@@ -84,13 +90,15 @@ func (c *client) removeFromWindow(transRefNum string) {
 	delete(c.deliverWindow, transRefNum)
 }
 
-func (client *client) handleIncoming() {
+func (client *client) handleIncoming(wg *sync.WaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
 	reader := bufio.NewReader(*client.conn)
 	//server.clients.Append(client)
 	//defer server.clients.Remove(client)
 	channel := make(chan *ucp.PDU, util.MaxWindowSize)
 	go client.processIncomingViaChannel(channel)
-	for {
+	for !*client.stop {
 
 		data, err := reader.ReadSlice(ETX)
 		if err != nil {
@@ -132,6 +140,7 @@ func (client *client) handleIncoming() {
 		}
 		channel <- pdu
 	}
+	close(channel)
 }
 
 func (client *client) processIncoming(pdu *ucp.PDU) {
@@ -167,8 +176,10 @@ func (client *client) processIncomingViaChannel(c chan *ucp.PDU) {
 	}
 }
 
-func (client *client) processDeliver() {
-	for {
+func (client *client) processDeliver(wg *sync.WaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
+	for !*client.stop {
 		if !client.windowHasVacantSlot() {
 			time.Sleep(500 * time.Millisecond)
 			continue

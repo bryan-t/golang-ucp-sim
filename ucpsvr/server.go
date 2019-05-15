@@ -20,6 +20,7 @@ type UcpServer struct {
 	//clients     *ClientSlice
 	deliverChan chan *models.DeliverSMReq
 	wg          sync.WaitGroup
+	stop        bool
 }
 
 // ETX is the terminator for UCP packets
@@ -57,9 +58,10 @@ func (server *UcpServer) Start(port int) error {
 		client.currentDeliverTransRef = 0
 		client.deliverWindow = make(map[string]*ucp.PDU)
 		client.deliverChan = server.deliverChan
+		client.stop = &server.stop
 		log.Println("Got a new connection.")
 
-		client.start()
+		client.start(&server.wg)
 
 		// TODO: proper stopping of clients
 	}
@@ -69,6 +71,10 @@ func (server *UcpServer) Start(port int) error {
 // Stop stops the UcpServer
 func (server *UcpServer) Stop() {
 	server.listener.Close()
+	server.stop = true
+	log.Println("Stopped server. Waiting for connections to be closed...")
+	server.wg.Wait()
+	log.Println("Closed all connections...")
 	/*for _, client := range server.clients.GetClients() {
 		(*(*client).conn).Close()
 	}*/
