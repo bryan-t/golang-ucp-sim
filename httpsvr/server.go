@@ -3,9 +3,9 @@ package httpsvr
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/bryan-t/golang-ucp-sim/models"
-	"github.com/bryan-t/golang-ucp-sim/util"
 	"github.com/gorilla/mux"
+	"golang-ucp-sim/models"
+	"golang-ucp-sim/util"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -16,7 +16,7 @@ type deliverFn func(*models.DeliverSMReq)
 var deliver deliverFn
 
 // Start starts the http server which serves as the UI
-func Start(port int, fn deliverFn) {
+func NewServer(port int, fn deliverFn) *http.Server {
 	log.Println("Starting http server...")
 	deliver = fn
 	router := mux.NewRouter()
@@ -24,6 +24,7 @@ func Start(port int, fn deliverFn) {
 	router.HandleFunc("/api/failTPS", failTPS)
 	router.HandleFunc("/api/successTPS", successTPS)
 	router.HandleFunc("/api/incomingTPS", incomingTPS)
+	router.HandleFunc("/api/setMaxTPS", setMaxTPS)
 	router.HandleFunc("/api/messages/deliverBulk", deliverBulk)
 
 	server := &http.Server{
@@ -31,10 +32,8 @@ func Start(port int, fn deliverFn) {
 		Handler: router,
 	}
 
-	log.Fatal(server.ListenAndServe())
-	log.Println("Started http server...")
+	return server
 }
-
 func serveHome(w http.ResponseWriter, r *http.Request) {
 
 }
@@ -43,6 +42,26 @@ type tps struct {
 	TPS int64
 }
 
+func setMaxTPS(w http.ResponseWriter, r *http.Request) {
+	log.Println("Got setMaxTPS request")
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Println("Error reading body")
+		w.WriteHeader(500)
+		w.Write([]byte("Encountered error on reading"))
+		return
+	}
+	log.Println("Got body: ", string(body))
+	tps := tps{}
+	err = json.Unmarshal(body, &tps)
+	if err != nil {
+		log.Printf("Failed to parse json err:%s\n", err.Error())
+		w.WriteHeader(500)
+		w.Write([]byte("Failed parsing JSON"))
+		return
+	}
+	util.UpdateMaxTPS(tps.TPS)
+}
 func incomingTPS(w http.ResponseWriter, r *http.Request) {
 	resp := tps{util.GetIncomingTPS()}
 	jsonResp, _ := json.Marshal(resp)
@@ -60,22 +79,27 @@ func failTPS(w http.ResponseWriter, r *http.Request) {
 }
 
 func deliverBulk(w http.ResponseWriter, r *http.Request) {
-	//log.Println("Got deliver bulk request")
+	log.Println("Got deliver bulk request")
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		w.Write([]byte("Encountered error on reading"))
+		log.Println("Error reading body")
 		w.WriteHeader(500)
+		w.Write([]byte("Encountered error on reading"))
 		return
 	}
-	//log.Println("Got body: ", string(body))
+	log.Println("Got body: ", string(body))
 	var bulkDeliverReq models.DeliverSMReqBulk
 	err = json.Unmarshal(body, &bulkDeliverReq)
 	if err != nil {
-		w.Write([]byte("Failed parsing JSON"))
+		log.Printf("Failed to parse json err:%s\n", err.Error())
 		w.WriteHeader(500)
+		w.Write([]byte("Failed parsing JSON"))
+		return
 	}
-	go putBulkDeliverReq(&bulkDeliverReq)
+	log.Printf("%v\n", bulkDeliverReq)
+	putBulkDeliverReq(&bulkDeliverReq)
 
+	log.Println("Done queueing")
 	w.WriteHeader(200)
 
 }

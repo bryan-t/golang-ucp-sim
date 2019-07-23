@@ -10,9 +10,21 @@ Only supports the following operations:
 * UCP_SIM_SILENT - disables logging
 * UCP_SIM_CONF_DIR - config directory
 
-# How to run
-1. go get github.com/bryan-t/golang-ucp-sim
-2. go run github.com/bryan-t/golang-ucp-sim
+# How to build 
+1. Clone or get a copy of this repository
+2. Run in project root
+```
+go build 
+```
+
+Note: implemented using Go Modules.
+
+# Command line arguments
+ ```
+-o	File where outgoing ucp requests(currently msisdn is logged) are written
+-r	File where receiving ucp requests(currently msisdn is logged) are written 
+```
+
 
 Note: implemented using Go Modules.
 
@@ -40,6 +52,7 @@ Note: implemented using Go Modules.
 
 ## TPS
 
+* http://localhost:8090/api/setMaxTPS
 * http://localhost:8090/api/incomingTPS
 * http://localhost:8090/api/successTPS
 * http://localhost:8090/api/failTPS

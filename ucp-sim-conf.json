@@ -4,5 +4,6 @@
 	"SubmitSMWindowMax": 100,
 	"DeliverSMWindowMax": 99,
 	"APIPort": 8090,
-	"UcpPort": 8080
+	"UcpPort": 8080,
+	"MaxTPS": 100 
 }

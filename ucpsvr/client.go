@@ -4,10 +4,10 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"github.com/bryan-t/golang-ucp-sim/models"
-	"github.com/bryan-t/golang-ucp-sim/ucp"
-	"github.com/bryan-t/golang-ucp-sim/ucpmock"
-	"github.com/bryan-t/golang-ucp-sim/util"
+	"golang-ucp-sim/models"
+	"golang-ucp-sim/ucp"
+	"golang-ucp-sim/ucpmock"
+	"golang-ucp-sim/util"
 	"log"
 	"net"
 	"sync"
@@ -17,26 +17,30 @@ import (
 const transRefMax = 99
 
 type client struct {
-	mutex                  sync.Mutex
+	id                     int
+	windowMutex            sync.Mutex
 	conn                   *net.Conn
 	currentDeliverTransRef int
 	deliverWindow          map[string]*ucp.PDU
 	deliverChan            chan *models.DeliverSMReq
-	stop                   *bool
+	stop                   bool
+	globalStop             *bool
+	receivedFile           *log.Logger
+	outgoingFile           *log.Logger
 }
 
 func (c *client) windowHasVacantSlot() bool {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	log.Println("Current size: ", len(c.deliverWindow))
-	log.Println("DeliverSMWindowMax: ", util.GetConfig().DeliverSMWindowMax)
+	c.windowMutex.Lock()
+	defer c.windowMutex.Unlock()
+	log.Printf("Client id '%d' - Max window size: '%d' | Current size: '%d' ",
+		c.id, util.GetConfig().DeliverSMWindowMax, len(c.deliverWindow))
 	return len(c.deliverWindow) < util.GetConfig().DeliverSMWindowMax
 }
 
 /*
 func (c *client) reserveWindowSlot() string {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.windowMutex.Lock()
+	defer c.windowMutex.Unlock()
 	if len(c.deliverWindow) > util.GetConfig().DeliverSMWindowMax {
 		return 0
 	}
@@ -59,12 +63,11 @@ func (c *client) start(wg *sync.WaitGroup) {
 	go c.processDeliver(&cWG)
 	cWG.Wait()
 	wg.Done()
-	log.Println("Closing client..")
 }
 
 func (c *client) putToWindow(pdu *ucp.PDU) string {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.windowMutex.Lock()
+	defer c.windowMutex.Unlock()
 	if len(c.deliverWindow) > util.GetConfig().DeliverSMWindowMax {
 		return ""
 	}
@@ -72,7 +75,6 @@ func (c *client) putToWindow(pdu *ucp.PDU) string {
 	for {
 		c.currentDeliverTransRef = (c.currentDeliverTransRef)%transRefMax + 1
 		idx = fmt.Sprintf("%02d", c.currentDeliverTransRef)
-		log.Println("Trying index: ", idx)
 		if _, ok := c.deliverWindow[idx]; ok {
 			continue
 		}
@@ -84,8 +86,8 @@ func (c *client) putToWindow(pdu *ucp.PDU) string {
 }
 
 func (c *client) removeFromWindow(transRefNum string) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.windowMutex.Lock()
+	defer c.windowMutex.Unlock()
 	log.Println("Removing: ", transRefNum)
 	delete(c.deliverWindow, transRefNum)
 }
@@ -98,20 +100,22 @@ func (client *client) handleIncoming(wg *sync.WaitGroup) {
 	//defer server.clients.Remove(client)
 	channel := make(chan *ucp.PDU, util.MaxWindowSize)
 	go client.processIncomingViaChannel(channel)
-	for !*client.stop {
+	for !client.stop && !*client.globalStop {
 
 		data, err := reader.ReadSlice(ETX)
 		if err != nil {
-			log.Println("Encountered error ", err.Error())
+			log.Println(client.conn, "Read slice Encountered error ", data, err.Error())
 			(*client.conn).Close()
+			client.stop = true
 			return
 		}
 
 		pdu, err := ucp.NewPDU(data)
-		log.Println("Got PDU: ", pdu)
+		log.Printf("Client id: '%d' - Incoming PDU: %s\n", client.id, string(pdu.Bytes()))
 		if err != nil {
-			log.Println("Encountered error ", err.Error())
+			log.Println("New PDU Encountered error ", err.Error())
 			(*client.conn).Close()
+			client.stop = true
 			return
 		}
 		config := util.GetConfig()
@@ -132,8 +136,9 @@ func (client *client) handleIncoming(wg *sync.WaitGroup) {
 			resBytes := res.Bytes()
 			_, err = (*client.conn).Write(resBytes)
 			if err != nil {
-				log.Println("Encountered error ", err.Error())
+				log.Println("Write Encountered error ", err.Error())
 				(*client.conn).Close()
+				client.stop = true
 				return
 			}
 			continue
@@ -142,29 +147,6 @@ func (client *client) handleIncoming(wg *sync.WaitGroup) {
 	}
 	close(channel)
 }
-
-func (client *client) processIncoming(pdu *ucp.PDU) {
-	res, _ := ucpmock.ProcessIncoming(pdu)
-	if pdu != nil && pdu.Type == ucp.ResultType && pdu.Operation == ucp.DeliverShortMessageOp {
-		processDeliverSMResult(client, pdu)
-		return
-	}
-	if res == nil {
-		return
-	}
-	resBytes := res.Bytes()
-	_, err := (*client.conn).Write(resBytes)
-	if err != nil {
-		log.Println("Encountered error ", err.Error())
-		(*client.conn).Close()
-		return
-	}
-}
-
-func processDeliverSMResult(client *client, pdu *ucp.PDU) {
-	client.removeFromWindow(pdu.TransRefNum)
-}
-
 func (client *client) processIncomingViaChannel(c chan *ucp.PDU) {
 	for {
 		pdu, ok := <-c
@@ -175,37 +157,87 @@ func (client *client) processIncomingViaChannel(c chan *ucp.PDU) {
 		client.processIncoming(pdu)
 	}
 }
+func (client *client) processIncoming(pdu *ucp.PDU) {
+	ack, _ := ucpmock.ProcessIncoming(pdu)
+	if pdu != nil && pdu.Type == ucp.ResultType && pdu.Operation == ucp.DeliverShortMessageOp {
+		processDeliverSMResult(client, pdu)
+		return
+	}
+	if pdu != nil && pdu.Type == ucp.OperationType && pdu.Operation == ucp.SubmitShortMessageOp {
+		util.LogIncomingTPS()
+		recipient, _ := pdu.GetRecipient()
+		now := time.Now().Format("2006-01-02 15:04:05")
+		toWrite := now + "," + recipient
+		client.receivedFile.Println(toWrite)
 
+	}
+
+	if ack == nil {
+		return
+	}
+	ackBytes := ack.Bytes()
+	_, err := (*client.conn).Write(ackBytes)
+	if err != nil {
+		log.Println("processIncoming Encountered error ", err.Error())
+		(*client.conn).Close()
+		client.stop = true
+		return
+	}
+}
 func (client *client) processDeliver(wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
-	for !*client.stop {
+	for !client.stop && !*client.globalStop {
 		if !client.windowHasVacantSlot() {
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
-		log.Println("Client: Waiting for request.")
-		req, _ := <-client.deliverChan
-		log.Println("Got a new deliver request.")
-		err := client.processDeliverReq(req)
-		if err != nil {
-			return
+		select {
+		case req := <-client.deliverChan:
+			log.Println("Got a new deliver request.")
+			err := client.processDeliverReq(req)
+			if err != nil {
+				return
+			}
+		default:
+
+			time.Sleep(1 * time.Second)
 		}
 	}
 }
 
 func (client *client) processDeliverReq(req *models.DeliverSMReq) error {
-	log.Printf("Processing: %+v\n", req)
 	pdu := ucp.NewDeliverSMPDU(req.Recipient, req.AccessCode, req.Message)
 	client.putToWindow(pdu)
-	log.Printf("Sending: %+v\n", pdu)
-	_, err := (*client.conn).Write(pdu.Bytes())
+	pduBytes := pdu.Bytes()
+
+	// Get current TPS
+	//
+	hour, min, sec := time.Now().Clock()
+	year, month, day := time.Now().Date()
+	sleepTime := time.Until(time.Date(year, month, day, hour, min, sec+1, 0, time.Local))
+
+	if util.GetSuccessTPS() >= util.GetMaxTPS() {
+		log.Println("Max TPS reached. Sleeping for", sleepTime)
+		time.Sleep(sleepTime)
+	}
+	log.Printf("Sending: %s\n", string(pduBytes))
+	_, err := (*client.conn).Write(pduBytes)
 	if err != nil {
-		log.Println("Failed to send Deliver SM: ", err)
+		log.Println(client.conn, "Failed to send Deliver SM: ", err)
 		(*client.conn).Close()
 		client.deliverChan <- req
+		client.stop = true
 		return errors.New("Failed to deliver SM")
 	}
-	util.LogIncomingTPS()
+	util.LogSuccess()
+	recipient, _ := pdu.GetRecipient()
+	sendTime := time.Now().Format("2006-01-02 15:04:05")
+	toWrite := sendTime + "," + recipient
+	client.outgoingFile.Println(toWrite)
 	return nil
+}
+func processDeliverSMResult(client *client, pdu *ucp.PDU) {
+	client.removeFromWindow(pdu.TransRefNum)
+
 }
