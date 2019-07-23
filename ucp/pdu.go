@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/go-gsm/charset"
+	//	"github.com/go-gsm/charset"
 	"log"
 	"strconv"
 	"strings"
@@ -42,6 +42,11 @@ type PDU struct {
 	Operation   string
 	Data        []string
 	Checksum    string
+}
+
+func (p PDU) String() string {
+	return fmt.Sprintf("(TransRefNum: '%s', Len: '%s', Type: '%s', Operation: '%s', Data: '%v', Checksum: '%s')",
+		p.TransRefNum, p.Len, p.Type, p.Operation, p.Data, p.Checksum)
 }
 
 // NewPDU creates an instance of PDU from raw bytes
@@ -106,25 +111,21 @@ func (pdu *PDU) GetMessage() (string, error) {
 
 // GetSender returns the sender of the message
 func (pdu *PDU) GetSender() (string, error) {
-	if pdu.Operation != SubmitShortMessageOp {
-		return "", errors.New("Operation is not submit short message")
-	}
-	decoded, err := hex.DecodeString(pdu.Data[1])
-	if err != nil {
+	if pdu.Operation != SubmitShortMessageOp && pdu.Operation != DeliverShortMessageOp {
+		err := fmt.Errorf("Operation %s does not have sender field", pdu.Operation)
+		log.Println(err)
 		return "", err
 	}
-	unpacked := charset.Unpack7Bit(decoded[1:])
-	sender, err := charset.Decode7Bit(unpacked)
-	if err != nil {
-		return "", err
-	}
-	return sender, nil
+
+	return pdu.Data[1], nil
 }
 
 // GetRecipient returns the recipient of message
 func (pdu *PDU) GetRecipient() (string, error) {
-	if pdu.Operation != SubmitShortMessageOp {
-		return "", errors.New("Operation is not submit short message")
+	if pdu.Operation != SubmitShortMessageOp && pdu.Operation != DeliverShortMessageOp {
+		err := fmt.Errorf("Operation %s does not have recipient field", pdu.Operation)
+		log.Println(err)
+		return "", err
 	}
 	return pdu.Data[0], nil
 }
@@ -202,7 +203,6 @@ func checkSum(b []byte) []byte {
 	mask := sum & 0xFF
 	ck := strings.ToUpper(strconv.FormatInt(int64(mask), 16))
 	chkSum := fmt.Sprintf("%02s", ck)
-	log.Println("chkSum: ", chkSum)
 	return []byte(chkSum)
 }
 
@@ -226,9 +226,10 @@ func NewDeliverSMPDU(recipient string, sender string, message string) *PDU {
 	res := new(PDU)
 	res.Type = OperationType
 	res.Operation = DeliverShortMessageOp
-	msgUcs := EncodeUcs2(message)
-	msgIra := make([]byte, hex.EncodedLen(len(msgUcs)))
-	hex.Encode(msgIra, []byte(msgUcs))
+	//	msgUcs := EncodeUcs2(message)
+
+	msgIra := make([]byte, hex.EncodedLen(len(message)))
+	hex.Encode(msgIra, []byte(message))
 	res.Data = []string{
 		recipient,
 		sender,
@@ -245,11 +246,11 @@ func NewDeliverSMPDU(recipient string, sender string, message string) *PDU {
 		"", // VP
 		"", // RPID
 		time.Now().Format("020106150405"),
-		"", // Dst
-		"", // Rsn
-		"", // DSCTS
-		"", // MT
-		"", // NB
+		"",  // Dst
+		"",  // Rsn
+		"",  // DSCTS
+		"3", // MT
+		"",  // NB
 		string(msgIra),
 		"",       // MMS
 		"",       // PR

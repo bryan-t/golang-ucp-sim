@@ -1,8 +1,8 @@
 package ucpmock
 
 import (
-	"github.com/bryan-t/golang-ucp-sim/ucp"
-	"github.com/bryan-t/golang-ucp-sim/util"
+	"golang-ucp-sim/ucp"
+	"golang-ucp-sim/util"
 	"log"
 	"math/rand"
 	"time"
@@ -67,6 +67,5 @@ func ProcessSubmitShortMessageOp(req *ucp.PDU) (*ucp.PDU, error) {
 	if sleep > 0 {
 		time.Sleep(time.Duration(sleep) * time.Millisecond)
 	}
-	util.LogSuccess()
 	return res, nil
 }

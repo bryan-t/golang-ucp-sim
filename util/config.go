@@ -15,6 +15,7 @@ type config struct {
 	DeliverSMWindowMax       int
 	APIPort                  int
 	UcpPort                  int
+	MaxTPS                   int64
 }
 
 var instance *config
@@ -29,6 +30,7 @@ func GetConfig() *config {
 		instance.DeliverSMWindowMax = 99
 		instance.APIPort = 8090
 		instance.UcpPort = 8080
+		instance.MaxTPS = 100
 
 		readConfig()
 	}

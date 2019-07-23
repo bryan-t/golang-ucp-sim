@@ -1,7 +1,7 @@
 package common
 
 import (
-	"github.com/bryan-t/golang-ucp-sim/models"
+	"golang-ucp-sim/models"
 	"sync"
 )
 
