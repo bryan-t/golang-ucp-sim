@@ -19,6 +19,15 @@ go build
 
 Note: implemented using Go Modules.
 
+# Command line arguments
+ ```
+-o	File where outgoing ucp requests(currently msisdn is logged) are written
+-r	File where receiving ucp requests(currently msisdn is logged) are written 
+```
+
+
+Note: implemented using Go Modules.
+
 # HTTP Api
 
 ## Deliver Short Message
